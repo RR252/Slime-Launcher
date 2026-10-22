@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Slime Launcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Mali:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Mali', cursive;
+            touch-action: none;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.3); border-radius: 4px; }
+        
+        .bounce-anim { animation: bounce 2s infinite; }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+        }
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+        }
+        
+        .logo-text {
+            font-family: 'Fredoka One', cursive;
+            color: #ff3385; 
+            -webkit-text-stroke: 4px white;
+            paint-order: stroke fill;
+            text-shadow: 0px 8px 0px rgba(0,0,0,0.15);
+            font-size: 5rem;
+            line-height: 1.1;
+            letter-spacing: 2px;
+        }
+        @media (max-width: 600px) {
+            .logo-text { font-size: 3.5rem; -webkit-text-stroke: 3px white; }
+        }
+        
+        .btn-3d {
+            transition: all 0.1s ease;
+            box-shadow: 0px 6px 0px rgba(0,0,0,0.2);
+        }
+        .btn-3d:active:not(:disabled) {
+            transform: translateY(6px);
+            box-shadow: 0px 0px 0px rgba(0,0,0,0.2);
+        }
+        .btn-3d:disabled {
+            box-shadow: none;
+            transform: none;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="bg-[#87CEEB] text-gray-800 overflow-hidden w-full h-screen relative">
+
+    <div id="ui-layer" class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-4">
+        <!-- Top Bar: Stats -->
+        <div class="flex justify-between items-start">
+            <div class="bg-white/90 text-gray-800 p-3 rounded-2xl shadow-lg pointer-events-auto border-4 border-indigo-200 min-w-[150px]">
+                <div class="text-sm font-semibold text-gray-600 mb-1">⏳ เวลาจับ: <span id="time-display" class="text-indigo-500">30</span> วินาที</div>
+                
+                <!-- Buff Display (Kept logic for potential future use) -->
+                <div id="buff-display" class="hidden mt-1 text-sm font-bold text-orange-600 bg-orange-100 border border-orange-300 p-1 rounded-lg text-center animate-pulse">
+                    ⚡ จับสไลม์ x2: <span id="buff-time">0</span> วินาที
+                </div>
+                
+                <!-- Inventory Mini-display -->
+                <div class="flex gap-3 text-sm font-bold mt-2 border-t pt-2 border-gray-200">
+                    <div class="flex items-center gap-1 text-pink-500"><div class="w-3 h-3 rounded-sm bg-pink-500"></div><span id="inv-pink">0</span></div>
+                    <div class="flex items-center gap-1 text-green-500"><div class="w-3 h-3 rounded-sm bg-green-500"></div><span id="inv-green">0</span></div>
+                    <div class="flex items-center gap-1 text-blue-500"><div class="w-3 h-3 rounded-sm bg-blue-500"></div><span id="inv-blue">0</span></div>
+                </div>
+            </div>
+            
+            <button id="btn-back-menu" class="hidden pointer-events-auto bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg border-2 border-red-300 transition-transform active:scale-95">
+                ❌ กลับเมนูหลัก
+            </button>
+        </div>
+
+        <div id="notification-area" class="absolute top-1/4 left-1/2 transform -translate-x-1/2 text-center pointer-events-none z-50"></div>
+
+        <div id="screen-menu" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto bg-transparent">
+            <div class="mb-8 bounce-anim text-center relative z-10">
+                <h1 class="logo-text relative inline-block">
+                    Slime<br>Launcher
+                    <span class="absolute -top-4 right-0 w-4 h-4 bg-[#ff3385] rounded-full border-2 border-white"></span>
+                    <span class="absolute top-0 -right-6 w-3 h-3 bg-[#ff3385] rounded-full border-2 border-white"></span>
+                </h1>
+            </div>
+            
+            <div class="flex flex-col gap-4 w-72 z-10 p-2">
+                <button onclick="changeState('biome')" class="btn-3d bg-[#66cc33] text-white border-4 border-white font-bold py-4 px-6 rounded-3xl text-xl flex items-center justify-center gap-2 shrink-0 hover:bg-[#5bb82d]">
+                    🌿 เริ่มเกม (Plain Biome)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- หน้าต่างแสดงผลลัพธ์รอบล่าสุด (กราฟแท่งเปรียบเทียบผู้เล่น) -->
+    <div id="modal-round-result" class="hidden absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white text-gray-800 rounded-3xl p-6 max-w-5xl w-full shadow-2xl border-8 border-blue-200 relative flex flex-col md:flex-row gap-6 max-h-[90vh] overflow-y-auto">
+            <!-- Left: Graph -->
+            <div class="flex-1 flex flex-col items-center text-center">
+                <h2 class="text-3xl font-bold text-blue-700 mb-2">📊 สรุปผลการจับสไลม์!</h2>
+                <p class="text-md text-gray-600 mb-3 font-semibold">เปรียบเทียบผลงานของคุณกับผู้เล่นอื่นในรอบนี้</p>
+                
+                <!-- แถบแสดงสถานะแบบข้อมูล -->
+                <div class="flex gap-2 mb-4 bg-blue-100 p-1.5 rounded-xl border-2 border-blue-200">
+                    <div id="step-indicator-1" class="px-4 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow">
+                        ขั้นตอนที่ 1: ข้อมูลใกล้เคียงกัน (7 คน)
+                    </div>
+                    <div id="step-indicator-2" class="px-4 py-2 rounded-lg font-bold text-sm transition-all bg-white text-gray-400">
+                        ขั้นตอนที่ 2: มีข้อมูลโดด 3 เท่า (Outlier)
+                    </div>
+                </div>
+
+                <!-- พื้นที่แสดงกราฟ D3 -->
+                <div id="d3-round-graph-container" class="w-full h-72 bg-blue-50 rounded-xl border-2 border-blue-100 relative mb-4 pt-2"></div>
+            </div>
+            
+            <!-- Right: Question -->
+            <div class="w-full md:w-1/3 bg-blue-50 p-5 rounded-2xl border-4 border-blue-100 flex flex-col justify-between">
+                <div>
+                    <h3 id="question-step-title" class="text-xl font-bold text-indigo-700 mb-3 flex items-center gap-2">🤔 คำนวณค่าเฉลี่ย (แบบที่ 1)</h3>
+                    <p id="question-step-desc" class="text-sm text-gray-700 font-semibold mb-4 leading-relaxed">
+                        จากกราฟข้อมูลผู้เล่นทั้ง 7 คน (แบบที่ 1 ข้อมูลใกล้เคียงกัน) ให้นักเรียนคำนวณและกรอกค่าเฉลี่ยเลขคณิต
+                    </p>
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">ค่าเฉลี่ยเลขคณิต:</label>
+                            <input type="number" step="any" id="input-mean" class="w-full p-3 border-2 border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-500 font-bold text-indigo-700 text-lg" placeholder="ระบุค่าเฉลี่ย...">
+                            <p id="input-error" class="text-red-500 text-xs font-bold mt-1 hidden">⚠️ กรุณากรอกค่าเฉลี่ยก่อนไปขั้นตอนถัดไป</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex flex-col gap-2 mt-6">
+                    <button id="btn-next-step" onclick="handleNextGraphStep()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg border-2 border-indigo-300 active:scale-95 text-lg transition-transform w-full">
+                        ไปแบบที่ 2 ➡️
+                    </button>
+                    <button id="btn-prev-step" onclick="switchGraphMode(1)" class="hidden bg-blue-400 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-xl shadow border-2 border-blue-300 active:scale-95 text-md transition-transform w-full">
+                        ⬅️ กลับไปแก้ไขแบบที่ 1
+                    </button>
+                    <button onclick="closeRoundResult()" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded-xl shadow border-2 border-gray-300 active:scale-95 text-md transition-transform w-full">
+                        🔄 เริ่มเล่นใหม่
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- หน้าต่างแสดงค่าที่กรอกและคำถามอภิปราย -->
+    <div id="modal-summary-next" class="hidden absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white text-gray-800 rounded-3xl p-6 max-w-5xl w-full shadow-2xl border-8 border-indigo-200 relative flex flex-col md:flex-row gap-6 max-h-[90vh] overflow-y-auto">
+            
+            <!-- Left: Summary Values -->
+            <div class="w-full md:w-2/5 flex flex-col text-center justify-between">
+                <div>
+                    <h2 class="text-2xl font-bold text-indigo-700 mb-4">📝 เปรียบเทียบค่าเฉลี่ย</h2>
+                    <div class="bg-indigo-50 p-5 rounded-2xl border-2 border-indigo-100 flex flex-col gap-5 text-left">
+                        <div class="bg-white p-4 rounded-xl border-2 border-blue-200 shadow-sm">
+                            <div class="text-sm font-bold text-blue-600 mb-1">📊 แบบที่ 1 (ข้อมูลใกล้เคียงกัน)</div>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="font-bold text-gray-700">ค่าเฉลี่ยเลขคณิต:</span>
+                                <span id="display-mean-1" class="text-blue-700 font-bold text-2xl bg-blue-50 px-4 py-1 rounded-lg border border-blue-200">-</span>
+                            </div>
+                            <div id="raw-data-1" class="text-xs text-gray-500 mt-2 font-semibold">ข้อมูล: -</div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-xl border-2 border-purple-200 shadow-sm">
+                            <div class="text-sm font-bold text-purple-600 mb-1">📊 แบบที่ 2 (มีข้อมูลโดด 3 เท่า)</div>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="font-bold text-gray-700">ค่าเฉลี่ยเลขคณิต:</span>
+                                <span id="display-mean-2" class="text-purple-700 font-bold text-2xl bg-purple-50 px-4 py-1 rounded-lg border border-purple-200">-</span>
+                            </div>
+                            <div id="raw-data-2" class="text-xs text-gray-500 mt-2 font-semibold">ข้อมูล: -</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-col gap-2">
+                    <button onclick="backToEditMeans()" class="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-bold py-2 px-4 rounded-xl border-2 border-indigo-200 active:scale-95 text-sm transition-transform">
+                        ⬅️ กลับไปดูกราฟ / แก้ไขค่าเฉลี่ย
+                    </button>
+                    <button onclick="closeNextSummary()" class="w-full bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-xl shadow border-2 border-gray-300 active:scale-95 text-sm transition-transform">
+                        🔄 เริ่มเล่นเกมใหม่
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Discussion Questions & Google Sheet Form -->
+            <div class="w-full md:w-3/5 bg-yellow-50 p-6 rounded-2xl border-4 border-yellow-200 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-2xl font-bold text-yellow-800 mb-4 flex items-center gap-2">💬 คำถามชวนคิดเพื่ออภิปราย</h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">👤 ชื่อ-นามสกุล / กลุ่ม / เลขที่:</label>
+                            <input type="text" id="student-name" class="w-full p-2.5 bg-white border-2 border-yellow-300 rounded-xl focus:outline-none focus:border-yellow-600 font-bold text-gray-800 text-sm" placeholder="ระบุชื่อหรือกลุ่มของคุณ...">
+                        </div>
+
+                        <div class="bg-white p-4 rounded-xl border-2 border-yellow-200 shadow-sm">
+                            <label class="block text-base font-bold text-indigo-900 mb-2">
+                                1. ทำไมค่าเฉลี่ยเลขคณิตของทั้งสองแบบถึงมีค่าต่างกัน?
+                            </label>
+                            <textarea id="discuss-q1" class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold text-gray-700 text-sm h-20" placeholder="พิมพ์ความคิดเห็นของคุณที่นี่..."></textarea>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-xl border-2 border-yellow-200 shadow-sm">
+                            <label class="block text-base font-bold text-indigo-900 mb-2">
+                                2. ในแบบที่ 2 ควรใช้วิธีไหนในการหาตัวแทนข้อมูลที่แม่นยำที่สุด และเพราะเหตุใด?
+                            </label>
+                            <textarea id="discuss-q2" class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold text-gray-700 text-sm h-20" placeholder="พิมพ์วิธีที่เลือกพร้อมเหตุผลประกอบ..."></textarea>
+                        </div>
+                    </div>
+
+                    <div id="submit-status" class="hidden mt-3 p-3 rounded-xl text-center font-bold text-sm"></div>
+                </div>
+                
+                <button id="btn-submit-sheet" onclick="submitToGoogleSheet()" class="mt-5 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg border-2 border-green-300 active:scale-95 text-lg transition-all flex items-center justify-center gap-2">
+                    <span>📤 ส่งคำตอบไปยัง Google Sheet</span>
+                </button>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" class="absolute inset-0 z-0"></canvas>
+
+    <script>
+        // ============================================================================
+        // ลิงก์ Google Apps Script Web App สำหรับบันทึกข้อมูลลง Google Sheet
+        // วิธีทำ: ไปที่ Google Sheet > ส่วนขยาย > Apps Script > วางโค้ด doPost(e) > กด Deploy เป็น Web App
+        // ============================================================================
+        const GOOGLE_SHEET_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxzvLerc_UuGBXdhyKqlGey4Lb9jS6Zx-NT9Y--0Rb2xGdOza0YRJQEI9Y4S6U9JLNQ/exec";
+
+        // Game State & Variables
+        const state = {
+            currentScreen: 'menu', 
+            maxTime: 30, // Changed to 30 seconds
+            currentTime: 30,
+            inventory: { pink: 0, green: 0, blue: 0 },
+            visitCount: 0,
+            slimesAtStartOfVisit: 0,
+            visitHistory: [],
+            buffTimeRemaining: 0, // Kept for logic compatibility
+            currentGraphMode: 1,
+            roundDataMode1: [],
+            roundDataMode2: [],
+            meanMode1: '',
+            meanMode2: ''
+        };
+
+        const colors = {
+            pink: { hex: '#eb5b79', pixels: { 1: '#5c1138', 2: '#8f1f54', 3: '#eb5b79', 4: '#f59dae', 5: '#38071e' } },
+            green: { hex: '#42b54a', pixels: { 1: '#103b13', 2: '#1f6b24', 3: '#42b54a', 4: '#85db8b', 5: '#051f07' } },
+            blue: { hex: '#446bf0', pixels: { 1: '#0e1940', 2: '#1b3073', 3: '#446bf0', 4: '#94aef5', 5: '#04081c' } }
+        };
+
+        const slimePattern = [
+            "0000011111100000",
+            "0001144444411000",
+            "0014444444444100",
+            "0144333333334410",
+            "0143333333333410",
+            "1433333333333341",
+            "1333333333333331",
+            "1335333333533331",
+            "1335333333533331",
+            "1333333333333331",
+            "1333353353333331",
+            "1233335533333321",
+            "0122333333332210",
+            "0011222222221100",
+            "0000111111110000"
+        ];
+
+        const preRenderedSlimes = {};
+        function initPreRenderedSlimes() {
+            const pixelSize = 8; 
+            Object.keys(colors).forEach(type => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 16 * pixelSize;
+                canvas.height = 15 * pixelSize;
+                const ctx = canvas.getContext('2d');
+                const palette = colors[type].pixels;
+                
+                for (let r = 0; r < slimePattern.length; r++) {
+                    const row = slimePattern[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const val = row[c];
+                        if (val !== '0') {
+                            ctx.fillStyle = palette[val];
+                            // Fill pixel (+1 to prevent visible seams)
+                            ctx.fillRect(c * pixelSize, r * pixelSize, pixelSize + 1, pixelSize + 1); 
+                        }
+                    }
+                }
+                preRenderedSlimes[type] = canvas;
+            });
+        }
+        initPreRenderedSlimes();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height, animationId;
+        let biomeSlimes = [];
+
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Slime {
+            constructor(type) {
+                this.type = type; 
+                const sizeRand = Math.random();
+                if (sizeRand < 0.33) {
+                    this.multiplier = 1; this.radius = 15;
+                } else if (sizeRand < 0.66) {
+                    this.multiplier = 2; this.radius = 25;
+                } else {
+                    this.multiplier = 3; this.radius = 40;
+                }
+                
+                this.x = Math.random() * (width - this.radius*2) + this.radius;
+                this.y = Math.random() * (height/2);
+                this.dx = (Math.random() - 0.5) * 4;
+                this.dy = Math.random() * 2;
+                this.gravity = 0.4;
+                this.bounce = -0.7 - Math.random()*0.2; 
+                this.friction = 0.98; 
+                this.squish = 1;
+                this.jumpTimer = Math.random() * 100;
+            }
+            update() {
+                this.dy += this.gravity;
+                this.x += this.dx;
+                this.y += this.dy;
+
+                if (this.y + this.radius > height) {
+                    this.y = height - this.radius;
+                    this.dy *= this.bounce;
+                    this.dx *= this.friction;
+                    this.squish = 0.6;
+                }
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.dx *= -1;
+                }
+                if (this.x + this.radius > width) {
+                    this.x = width - this.radius;
+                    this.dx *= -1;
+                }
+                
+                this.jumpTimer--;
+                if (this.jumpTimer <= 0 && Math.abs(this.dy) < 1) {
+                    this.dy = -8 - Math.random() * 5;
+                    this.dx = (Math.random() - 0.5) * 6;
+                    this.jumpTimer = 60 + Math.random() * 100;
+                    this.squish = 1.3; 
+                }
+                this.squish += (1 - this.squish) * 0.1;
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.scale(1, this.squish); 
+                
+                const size = this.radius * 2;
+                const hSize = size * (15/16);
+                
+                ctx.drawImage(preRenderedSlimes[this.type], -this.radius, -this.radius, size, hSize);
+                ctx.restore();
+            }
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, width, height);
+
+            if (state.currentScreen === 'biome') {
+                drawBiomeBackground();
+                if (biomeSlimes.length < 15 && Math.random() < 0.05) {
+                    const types = ['pink', 'green', 'blue'];
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    biomeSlimes.push(new Slime(type));
+                }
+                biomeSlimes.forEach(slime => { slime.update(); slime.draw(); });
+            } 
+            else {
+                drawAbstractBackground();
+            }
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        function drawBiomeBackground() {
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, "#42c8f5"); 
+            grad.addColorStop(1, "#a8e6f7"); 
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.beginPath();
+            ctx.arc(width*0.2, height*0.2, 40, 0, Math.PI*2);
+            ctx.arc(width*0.2 + 40, height*0.2, 50, 0, Math.PI*2);
+            ctx.arc(width*0.2 + 80, height*0.2, 40, 0, Math.PI*2);
+            ctx.fill();
+            
+            ctx.fillStyle = "#80e64c"; 
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            ctx.lineTo(0, height - 120);
+            ctx.quadraticCurveTo(width/2, height - 250, width, height - 100);
+            ctx.lineTo(width, height);
+            ctx.fill();
+            ctx.strokeStyle = "#5dba2d";
+            ctx.lineWidth = 10;
+            ctx.stroke();
+        }
+
+        function drawAbstractBackground() {
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, "#29bbf0");
+            grad.addColorStop(1, "#8be3fa");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        canvas.addEventListener('mousedown', handleInteraction);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); 
+            const touch = e.touches[0];
+            handleInteraction({ clientX: touch.clientX, clientY: touch.clientY });
+        }, { passive: false });
+
+        function handleInteraction(e) {
+            if (state.currentScreen !== 'biome') return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            for (let i = biomeSlimes.length - 1; i >= 0; i--) {
+                const slime = biomeSlimes[i];
+                const dist = Math.hypot(mouseX - slime.x, mouseY - slime.y);
+                
+                if (dist <= slime.radius + 10) { 
+                    catchSlime(slime, i, mouseX, mouseY);
+                    break;
+                }
+            }
+        }
+
+        function catchSlime(slime, index, x, y) {
+            let baseAmount = slime.multiplier;
+            let amountToCatch = state.buffTimeRemaining > 0 ? baseAmount * 2 : baseAmount;
+
+            biomeSlimes.splice(index, 1);
+            state.inventory[slime.type] += amountToCatch;
+            updateUI();
+            
+            const colorName = slime.type === 'pink' ? 'ชมพู' : (slime.type === 'green' ? 'เขียว' : 'ฟ้า');
+            const textColor = colors[slime.type].hex;
+            const textMsg = state.buffTimeRemaining > 0 ? `⚡ +${amountToCatch} สไลม์สี${colorName}` : `+${amountToCatch} สไลม์สี${colorName}`;
+            showFloatingText(textMsg, x, y, textColor);
+        }
+
+        setInterval(() => {
+            if (state.buffTimeRemaining > 0) {
+                state.buffTimeRemaining--;
+                updateUI();
+            }
+        }, 1000);
+
+        function showFloatingText(text, x, y, color) {
+            const el = document.createElement('div');
+            el.className = 'floating-text text-xl';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.style.color = color;
+            el.innerText = text;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        let biomeTimer;
+        function startBiomeTimer() {
+            clearInterval(biomeTimer);
+            biomeTimer = setInterval(() => {
+                if (state.currentScreen === 'biome') {
+                    state.currentTime--;
+                    updateUI();
+                    if (state.currentTime <= 0) {
+                        clearInterval(biomeTimer);
+                        endRoundAndShowResult();
+                    }
+                }
+            }, 1000);
+        }
+
+        function stopBiomeTimer() {
+            clearInterval(biomeTimer);
+        }
+
+        document.getElementById('btn-back-menu').addEventListener('click', () => {
+            if (state.currentScreen === 'biome') {
+                endRoundAndShowResult();
+            } else {
+                changeState('menu');
+            }
+        });
+
+        function changeState(newState) {
+            state.currentScreen = newState;
+            
+            document.getElementById('screen-menu').classList.add('hidden');
+            const backBtn = document.getElementById('btn-back-menu');
+
+            if (newState === 'menu') {
+                document.getElementById('screen-menu').classList.remove('hidden');
+                backBtn.classList.add('hidden');
+                biomeSlimes = []; 
+                stopBiomeTimer();
+            } 
+            else if (newState === 'biome') {
+                backBtn.classList.remove('hidden');
+                backBtn.innerText = "🏃 ยอมแพ้และออกจากทุ่งหญ้า";
+                state.visitCount++;
+                state.slimesAtStartOfVisit = state.inventory.pink + state.inventory.green + state.inventory.blue;
+                state.currentTime = state.maxTime;
+                startBiomeTimer();
+            }
+        }
+
+        function updateUI() {
+            const timeDisplay = document.getElementById('time-display');
+            timeDisplay.innerText = state.currentScreen === 'biome' ? state.currentTime : state.maxTime;
+            timeDisplay.className = (state.currentScreen === 'biome' && state.currentTime <= 10) ? 'text-red-600 animate-pulse font-bold' : 'text-indigo-500';
+
+            document.getElementById('inv-pink').innerText = state.inventory.pink;
+            document.getElementById('inv-green').innerText = state.inventory.green;
+            document.getElementById('inv-blue').innerText = state.inventory.blue;
+
+            const buffEl = document.getElementById('buff-display');
+            if(state.buffTimeRemaining > 0) {
+                buffEl.classList.remove('hidden');
+                document.getElementById('buff-time').innerText = state.buffTimeRemaining;
+            } else {
+                buffEl.classList.add('hidden');
+            }
+        }
+
+        function endRoundAndShowResult() {
+            stopBiomeTimer();
+            const total = state.inventory.pink + state.inventory.green + state.inventory.blue;
+            const caughtThisVisit = total - state.slimesAtStartOfVisit;
+
+            // หากไม่ได้จับเลย ให้กลับหน้าหลักทันที
+            if (total === 0 && caughtThisVisit <= 0) {
+                state.visitHistory.push({ visit: state.visitCount, caught: 0 });
+                changeState('menu');
+                return;
+            }
+            
+            state.visitHistory.push({ visit: state.visitCount, caught: caughtThisVisit });
+            
+            const names = ["ผู้เล่น A", "ผู้เล่น B", "ผู้เล่น C", "ผู้เล่น D", "ผู้เล่น E", "ผู้เล่น F"];
+            
+            // สุ่มค่าความต่าง 0-5 หน่วย สำหรับผู้เล่น 6 คน
+            let baseScores = [];
+            for(let i = 0; i < 6; i++) {
+                let diff = Math.floor(Math.random() * 6); // สุ่มห่าง 0 ถึง 5 หน่วย
+                let sign = Math.random() < 0.5 ? -1 : 1;
+                let mockScore = Math.max(0, caughtThisVisit + (diff * sign));
+                baseScores.push(mockScore);
+            }
+
+            // แบบที่ 1: ข้อมูล 7 คน (รวมเรา) มีค่าใกล้เคียงกัน ต่างกัน 0-5 หน่วย
+            state.roundDataMode1 = [];
+            for(let i = 0; i < 6; i++) {
+                state.roundDataMode1.push({ name: names[i], score: baseScores[i], isYou: false });
+            }
+            state.roundDataMode1.push({ name: "คุณ", score: caughtThisVisit, isYou: true });
+            state.roundDataMode1.sort((a,b) => b.score - a.score);
+
+            // แบบที่ 2: ข้อมูล 6 คน (รวมเรา) ใกล้เคียงกัน ต่างกัน 0-5 หน่วย และอีก 1 คน มีค่าเป็น 3 เท่า
+            state.roundDataMode2 = [];
+            for(let i = 0; i < 5; i++) {
+                state.roundDataMode2.push({ name: names[i], score: baseScores[i], isYou: false });
+            }
+            let outlierScore = (caughtThisVisit > 0 ? caughtThisVisit : 5) * 3;
+            state.roundDataMode2.push({ name: names[5], score: outlierScore, isYou: false });
+            state.roundDataMode2.push({ name: "คุณ", score: caughtThisVisit, isYou: true });
+            state.roundDataMode2.sort((a,b) => b.score - a.score);
+
+            // รีเซ็ตค่าที่เคยกรอกไว้เมื่อจบรอบใหม่
+            state.meanMode1 = '';
+            state.meanMode2 = '';
+            document.getElementById('discuss-q1').value = '';
+            document.getElementById('discuss-q2').value = '';
+            document.getElementById('submit-status').classList.add('hidden');
+            const submitBtn = document.getElementById('btn-submit-sheet');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>📤 ส่งคำตอบไปยัง Google Sheet</span>';
+            submitBtn.className = "mt-5 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 px-8 rounded-xl shadow-lg border-2 border-green-300 active:scale-95 text-lg transition-all flex items-center justify-center gap-2";
+
+            state.currentScreen = 'round-result';
+            document.getElementById('modal-round-result').classList.remove('hidden');
+            
+            // เริ่มต้นแสดงแบบที่ 1 ก่อน
+            setTimeout(() => {
+                switchGraphMode(1);
+            }, 50);
+        }
+
+        function switchGraphMode(mode) {
+            state.currentGraphMode = mode;
+            const step1 = document.getElementById('step-indicator-1');
+            const step2 = document.getElementById('step-indicator-2');
+            const title = document.getElementById('question-step-title');
+            const desc = document.getElementById('question-step-desc');
+            const nextBtn = document.getElementById('btn-next-step');
+            const prevBtn = document.getElementById('btn-prev-step');
+            const inputMean = document.getElementById('input-mean');
+            const inputError = document.getElementById('input-error');
+
+            inputError.classList.add('hidden');
+
+            if (mode === 1) {
+                step1.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow";
+                step2.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all bg-white text-gray-400";
+                title.innerText = "🤔 คำนวณค่าเฉลี่ย (แบบที่ 1)";
+                desc.innerText = "จากกราฟข้อมูลผู้เล่นทั้ง 7 คน (แบบที่ 1 ข้อมูลใกล้เคียงกัน) ให้นักเรียนคำนวณและกรอกค่าเฉลี่ยเลขคณิต";
+                nextBtn.innerText = "ไปแบบที่ 2 ➡️";
+                prevBtn.classList.add('hidden');
+                inputMean.value = state.meanMode1;
+                renderRoundGraph(state.roundDataMode1);
+            } else {
+                step2.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all bg-blue-600 text-white shadow";
+                step1.className = "px-4 py-2 rounded-lg font-bold text-sm transition-all bg-green-100 text-green-700 border border-green-300";
+                title.innerText = "🤔 คำนวณค่าเฉลี่ย (แบบที่ 2)";
+                desc.innerText = "จากกราฟข้อมูลผู้เล่นทั้ง 7 คน (แบบที่ 2 มีข้อมูลโดด 3 เท่า) ให้นักเรียนคำนวณและกรอกค่าเฉลี่ยเลขคณิต";
+                nextBtn.innerText = "สรุปผลและอภิปราย ➡️";
+                prevBtn.classList.remove('hidden');
+                inputMean.value = state.meanMode2;
+                renderRoundGraph(state.roundDataMode2);
+            }
+        }
+
+        function handleNextGraphStep() {
+            const inputMean = document.getElementById('input-mean');
+            const inputError = document.getElementById('input-error');
+            const val = inputMean.value.trim();
+
+            if (val === '') {
+                inputError.classList.remove('hidden');
+                inputMean.focus();
+                return;
+            }
+            inputError.classList.add('hidden');
+
+            if (state.currentGraphMode === 1) {
+                state.meanMode1 = val;
+                switchGraphMode(2);
+            } else {
+                state.meanMode2 = val;
+                goToNextSummary();
+            }
+        }
+
+        function backToEditMeans() {
+            document.getElementById('modal-summary-next').classList.add('hidden');
+            document.getElementById('modal-round-result').classList.remove('hidden');
+            switchGraphMode(2);
+        }
+
+        function closeRoundResult() {
+            document.getElementById('modal-round-result').classList.add('hidden');
+            updateUI();
+            changeState('menu');
+        }
+
+        function goToNextSummary() {
+            // นำค่าเฉลี่ยทั้ง 2 แบบไปแสดงในหน้าเปรียบเทียบและคำถามอภิปราย
+            document.getElementById('display-mean-1').innerText = state.meanMode1 || "-";
+            document.getElementById('display-mean-2').innerText = state.meanMode2 || "-";
+            
+            const scores1 = state.roundDataMode1.map(d => d.score).join(', ');
+            const scores2 = state.roundDataMode2.map(d => d.score).join(', ');
+            document.getElementById('raw-data-1').innerText = `ข้อมูล (7 คน): ${scores1}`;
+            document.getElementById('raw-data-2').innerText = `ข้อมูล (7 คน): ${scores2}`;
+
+            // สลับการแสดงผลหน้าต่าง
+            document.getElementById('modal-round-result').classList.add('hidden');
+            document.getElementById('modal-summary-next').classList.remove('hidden');
+        }
+
+        async function submitToGoogleSheet() {
+            const studentName = document.getElementById('student-name').value.trim();
+            const q1Answer = document.getElementById('discuss-q1').value.trim();
+            const q2Answer = document.getElementById('discuss-q2').value.trim();
+            const statusEl = document.getElementById('submit-status');
+            const submitBtn = document.getElementById('btn-submit-sheet');
+
+            if (!q1Answer || !q2Answer) {
+                statusEl.className = "mt-3 p-3 rounded-xl text-center font-bold text-sm bg-red-100 text-red-700 border border-red-300";
+                statusEl.innerText = "⚠️ กรุณาพิมพ์คำตอบอภิปรายทั้ง 2 ข้อให้ครบถ้วนก่อนกดส่งครับ";
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            const payload = {
+                timestamp: new Date().toLocaleString('th-TH'),
+                studentName: studentName || "ไม่ระบุชื่อ",
+                dataMode1: state.roundDataMode1.map(d => d.score).join(', '),
+                meanMode1: state.meanMode1,
+                dataMode2: state.roundDataMode2.map(d => d.score).join(', '),
+                meanMode2: state.meanMode2,
+                question1_why_different: q1Answer,
+                question2_best_method: q2Answer
+            };
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span>⏳ กำลังส่งข้อมูล...</span>';
+            statusEl.classList.add('hidden');
+
+            // ตรวจสอบว่าได้ใส่ URL ของ Google Apps Script หรือยัง
+            if (!GOOGLE_SHEET_WEB_APP_URL || GOOGLE_SHEET_WEB_APP_URL === "ใส่_URL_ของ_GOOGLE_APPS_SCRIPT_ที่นี่") {
+                setTimeout(() => {
+                    statusEl.className = "mt-3 p-3 rounded-xl text-center font-bold text-sm bg-amber-100 text-amber-800 border border-amber-300";
+                    statusEl.innerHTML = "✅ บันทึกคำตอบในระบบจำลองสำเร็จ!<br><span class='text-xs font-normal'>(ผู้สอนสามารถนำ URL ของ Google Apps Script มาใส่ในตัวแปร GOOGLE_SHEET_WEB_APP_URL ในโค้ดเพื่อเชื่อมต่อ Google Sheet จริงได้ทันที)</span>";
+                    statusEl.classList.remove('hidden');
+                    submitBtn.innerHTML = '<span>✅ ส่งคำตอบเรียบร้อยแล้ว</span>';
+                    submitBtn.className = "mt-5 w-full bg-gray-400 text-white font-bold py-3.5 px-8 rounded-xl shadow border-2 border-gray-300 text-lg flex items-center justify-center gap-2";
+                }, 800);
+                return;
+            }
+
+            try {
+                await fetch(GOOGLE_SHEET_WEB_APP_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                statusEl.className = "mt-3 p-3 rounded-xl text-center font-bold text-sm bg-green-100 text-green-700 border border-green-300";
+                statusEl.innerText = "🎉 ส่งคำตอบไปยัง Google Sheet สำเร็จเรียบร้อยแล้ว!";
+                statusEl.classList.remove('hidden');
+                submitBtn.innerHTML = '<span>✅ ส่งคำตอบเรียบร้อยแล้ว</span>';
+                submitBtn.className = "mt-5 w-full bg-gray-400 text-white font-bold py-3.5 px-8 rounded-xl shadow border-2 border-gray-300 text-lg flex items-center justify-center gap-2";
+            } catch (error) {
+                statusEl.className = "mt-3 p-3 rounded-xl text-center font-bold text-sm bg-red-100 text-red-700 border border-red-300";
+                statusEl.innerText = "❌ เกิดข้อผิดพลาดในการส่งข้อมูล กรุณาลองใหม่อีกครั้ง";
+                statusEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>📤 ส่งคำตอบไปยัง Google Sheet</span>';
+            }
+        }
+
+        function closeNextSummary() {
+            document.getElementById('modal-summary-next').classList.add('hidden');
+            updateUI();
+            changeState('menu');
+        }
+
+        function renderRoundGraph(data) {
+            const container = document.getElementById('d3-round-graph-container');
+            container.innerHTML = "";
+
+            const margin = {top: 30, right: 20, bottom: 40, left: 40};
+            const width = container.clientWidth - margin.left - margin.right;
+            const height = container.clientHeight - margin.top - margin.bottom;
+
+            const svg = d3.select("#d3-round-graph-container")
+              .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+              .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleBand()
+              .domain(data.map(d => d.name))
+              .range([0, width])
+              .padding(0.3);
+
+            // วาดแกน X
+            svg.append("g")
+              .attr("transform", `translate(0, ${height})`)
+              .call(d3.axisBottom(x))
+              .selectAll("text")
+                .style("font-family", "Mali")
+                .style("font-weight", "bold")
+                .style("font-size", "13px")
+                .attr("fill", d => d === "คุณ" ? "#ff3385" : "#4b5563");
+
+            // หาค่าสูงสุดสำหรับแกน Y เพื่อให้กราฟมีพื้นที่ด้านบนเหลือ
+            const maxY = d3.max(data, d => d.score) || 10;
+            const y = d3.scaleLinear()
+              .domain([0, maxY * 1.2])
+              .range([height, 0]);
+
+            // วาดแกน Y
+            svg.append("g")
+              .call(d3.axisLeft(y).ticks(5))
+              .selectAll("text")
+                .style("font-family", "Mali")
+                .style("font-weight", "bold")
+                .style("fill", "#6b7280");
+
+            // วาดแท่งกราฟ
+            svg.selectAll("rect")
+              .data(data)
+              .enter()
+              .append("rect")
+                .attr("x", d => x(d.name))
+                .attr("y", d => y(d.score))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.score))
+                .attr("fill", d => d.isYou ? "#ff3385" : "#3b82f6") // สีชมพูสำหรับคุณ สีฟ้าสำหรับคนอื่น
+                .attr("rx", 6);
+
+            // ใส่ตัวเลขบนแท่งกราฟ
+            svg.selectAll("text.bar-label")
+              .data(data)
+              .enter()
+              .append("text")
+                .attr("class", "bar-label")
+                .attr("x", d => x(d.name) + x.bandwidth() / 2)
+                .attr("y", d => y(d.score) - 8)
+                .attr("text-anchor", "middle")
+                .text(d => d.score)
+                .style("font-family", "Mali")
+                .style("font-size", "16px")
+                .style("font-weight", "bold")
+                .style("fill", d => d.isYou ? "#ff3385" : "#4b5563");
+        }
+
+        function showNotification(msg, colorType) {
+            const area = document.getElementById('notification-area');
+            const el = document.createElement('div');
+            let bgClass = "bg-gray-800 text-white";
+            if(colorType === 'red') bgClass = "bg-red-500 text-white";
+            if(colorType === 'green') bgClass = "bg-green-500 text-white";
+            if(colorType === 'orange') bgClass = "bg-orange-500 text-white";
+            if(colorType === 'indigo') bgClass = "bg-indigo-500 text-white";
+
+            el.className = `${bgClass} font-bold px-6 py-3 rounded-full shadow-lg mb-2 transform transition-all duration-300 opacity-0 translate-y-4`;
+            el.innerText = msg;
+            
+            area.appendChild(el);
+            
+            requestAnimationFrame(() => {
+                el.classList.remove('opacity-0', 'translate-y-4');
+            });
+            setTimeout(() => {
+                el.classList.add('opacity-0', '-translate-y-4');
+                setTimeout(() => el.remove(), 300);
+            }, 2000);
+        }
+
+        // Init
+        updateUI();
+        gameLoop();
+
+    </script>
+</body>
+</html>
